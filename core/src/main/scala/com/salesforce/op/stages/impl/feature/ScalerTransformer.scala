@@ -195,7 +195,8 @@ final class ScalerTransformer[I <: Real, O <: Real]
   }
 }
 
-final class LogMinShiftEstimator[I <: Real, O <: Real](
+final class LogMinShiftEstimator[I <: Real, O <: Real]
+(
   uid: String = UID[LogMinShiftEstimator[_, _]]
 )(implicit tti: TypeTag[I], tto: TypeTag[O], ttov: TypeTag[O#Value])
   extends UnaryEstimator[I, O](operationName = "LogEstimator", uid = uid) {
@@ -215,11 +216,12 @@ final class LogMinShiftEstimator[I <: Real, O <: Real](
   }
 }
 
-final class LogMinShiftEstimatorModel[I <: Real, O <: Real](
+final class LogMinShiftEstimatorModel[I <: Real, O <: Real]
+(
   scaler: LogMinShiftScaler,
   operationName: String,
   uid: String
-)(implicit tti: TypeTag[I],  tto: TypeTag[O], ttov: TypeTag[O#Value])
+)(implicit tti: TypeTag[I], tto: TypeTag[O], ttov: TypeTag[O#Value])
 extends UnaryModel[I, O](operationName = operationName, uid = uid) {
   private val ftFactory = FeatureTypeFactory[O]()
 
