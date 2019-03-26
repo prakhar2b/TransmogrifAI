@@ -76,6 +76,6 @@ class ScalerMetadataTest extends FlatSpec with TestSparkContext {
     val err = intercept[NoSuchElementException] (
       ScalerMetadata.apply(invalidMetaData).get
     )
-    err.getMessage shouldBe "unsupportedScaling is not a member of Enum (Linear, Logarithmic)"
+    err.getMessage shouldBe "unsupportedScaling is not a member of Enum (Linear, Logarithmic, LogMinShift)"
   }
 }
