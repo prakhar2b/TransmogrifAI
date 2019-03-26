@@ -30,13 +30,22 @@
 
 package com.salesforce.op.stages.impl.feature
 
-import enumeratum.{Enum, EnumEntry}
+import com.salesforce.op.features.FeatureLike
+import com.salesforce.op.features.types._
+import com.salesforce.op.stages.base.unary.UnaryModel
+import com.salesforce.op.test.{OpEstimatorSpec, TestFeatureBuilder}
+import com.salesforce.op.utils.spark.RichDataset._
+import org.junit.runner.RunWith
+import org.scalatest.junit.JUnitRunner
 
-sealed trait ScalingType extends EnumEntry with Serializable
+import scala.util.{Failure, Success}
 
-object ScalingType extends Enum[ScalingType] {
-  val values = findValues
-  case object Linear extends ScalingType
-  case object Logarithmic extends ScalingType
-  case object LogMinShift extends ScalingType
+@RunWith(classOf[JUnitRunner])
+class  LogEstimatorTest extends OpEstimatorSpec[Real, UnaryModel[Real, Real], LogMinShiftEstimator[Real, Real]] {
+  val (inputData, f1) = TestFeatureBuilder(Seq(4.0, 1.0, 0.0, -3.0).toReal)
+
+  val estimator = new LogMinShiftEstimator[Real, Real]().setInput(f1)
+
+  val expectedResult: Seq[Real] = Seq(4.0, 1.0, 0.0, -3.0).map(x => (math.log(x + 4.0)).toReal)
 }
+

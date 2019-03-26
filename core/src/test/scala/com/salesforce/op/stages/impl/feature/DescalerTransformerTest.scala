@@ -84,6 +84,26 @@ class DescalerTransformerTest extends OpTransformerSpec[Real, DescalerTransforme
     all(actual.zip(expected).map(x => math.abs(x._2 - x._1))) should be < 0.0001
   }
 
+  it should "descale and work in log-min shift scaling workflow" in {
+    val logMinShiftScaler = new LogMinShiftEstimator[Real, Real]().setInput(f1).fit(testData)
+    val scaledResponse = logMinShiftScaler.getOutput()
+    val metadata = logMinShiftScaler.transform(testData).schema(scaledResponse.name).metadata
+    ScalerMetadata(metadata) match {
+      case Failure(err) => fail(err)
+      case Success(meta) =>
+        meta shouldBe ScalerMetadata(ScalingType.LogMinShift, LogMinShiftScalerArgs(0.0))
+    }
+    val shifted = scaledResponse.map[Real](v => v.value.map(_ + 1).toReal, operationName = "shift")
+    val descaledResponse = new DescalerTransformer[Real, Real, Real]().setInput(shifted, scaledResponse).getOutput()
+    val workflow = new OpWorkflow().setResultFeatures(descaledResponse)
+    val wfModel = workflow.setInputDataset(testData).train()
+    val transformed = wfModel.score()
+
+    val actual = transformed.collect().map(_.getAs[Double](1))
+    val expected = Array(5.0, 2.0, 1.0).map(x => x * math.E - 1.0)
+    all(actual.zip(expected).map(x => math.abs(x._2 - x._1))) should be < 0.0001
+  }
+
   it should "work with its shortcut" in {
     val descaled = f1.descale[Real, Real](f1)
     val transformed = descaled.originStage.asInstanceOf[DescalerTransformer[Real, Real, Real]].transform(inputData)

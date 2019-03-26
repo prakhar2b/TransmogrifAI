@@ -32,8 +32,10 @@ package com.salesforce.op.stages.impl.feature
 
 import com.salesforce.op.UID
 import com.salesforce.op.features.types._
-import com.salesforce.op.stages.base.unary.UnaryTransformer
+import com.salesforce.op.stages.base.unary.{UnaryEstimator, UnaryModel, UnaryTransformer}
 import com.salesforce.op.utils.json.{JsonLike, JsonUtils}
+import org.apache.spark.sql.Dataset
+import org.apache.spark.sql.functions.min
 import org.apache.spark.sql.types.{Metadata, MetadataBuilder}
 
 import scala.reflect.runtime.universe.TypeTag
@@ -58,6 +60,7 @@ case class EmptyArgs() extends ScalingArgs
  */
 case class LinearScalerArgs(slope: Double, intercept: Double) extends ScalingArgs
 
+case class LogMinShiftScalerArgs(min: Double) extends ScalingArgs
 /**
  * A trait for defining a new family of scaling functions
  * scalingType: a ScalingType Enum for the scaling name
@@ -88,6 +91,7 @@ object Scaler {
   def apply(scalingType: ScalingType, args: ScalingArgs): Scaler = (scalingType, args) match {
     case (ScalingType.Linear, l: LinearScalerArgs) => LinearScaler(l)
     case (ScalingType.Logarithmic, _) => LogScaler()
+    case (ScalingType.LogMinShift, l: LogMinShiftScalerArgs) => LogMinShiftScaler(l)
     case (t, args) => throw new IllegalArgumentException(
       s"Invalid combination of scaling type '$t' and args type '${args.getClass.getSimpleName}'")
   }
@@ -113,6 +117,12 @@ case class LinearScaler(args: LinearScalerArgs) extends Scaler {
   val scalingType: ScalingType = ScalingType.Linear
   def scale(v: Double): Double = args.slope * v + args.intercept
   def descale(v: Double): Double = (v - args.intercept) / args.slope
+}
+
+case class LogMinShiftScaler(args: LogMinShiftScalerArgs) extends Scaler {
+  val scalingType: ScalingType = ScalingType.LogMinShift
+  def scale(v: Double): Double = math.log(v - args.min + 1)
+  def descale(v: Double): Double = math.exp(v) + args.min - 1
 }
 
 /**
@@ -141,6 +151,8 @@ object ScalerMetadata extends {
         JsonUtils.fromString[LinearScalerArgs](args).map(ScalerMetadata(t, _))
       case t@ScalingType.Logarithmic =>
         JsonUtils.fromString[EmptyArgs](args).map(ScalerMetadata(t, _))
+      case t@ScalingType.LogMinShift =>
+        JsonUtils.fromString[LogMinShiftScalerArgs](args).map(ScalerMetadata(t, _))
       case t =>
         Failure(new IllegalArgumentException(s"Unsupported scaling type $t"))
     }
@@ -183,4 +195,37 @@ final class ScalerTransformer[I <: Real, O <: Real]
   }
 }
 
+final class LogMinShiftEstimator[I <: Real, O <: Real](
+  uid: String = UID[LogMinShiftEstimator[_, _]]
+)(implicit tti: TypeTag[I], tto: TypeTag[O], ttov: TypeTag[O#Value])
+  extends UnaryEstimator[I, O](operationName = "LogEstimator", uid = uid) {
+
+  def fitFn(dataset: Dataset[I#Value]): UnaryModel[I, O] = {
+    val minScore = dataset.agg(min(dataset.columns(0))).head().getDouble(0)
+    val scalingArgs = LogMinShiftScalerArgs(minScore)
+    val metaData = ScalerMetadata(scalingType = ScalingType.LogMinShift,
+      scalingArgs = scalingArgs).toMetadata()
+    setMetadata(metaData)
+    val scaler = LogMinShiftScaler(scalingArgs)
+    new LogMinShiftEstimatorModel[I, O](
+      scaler = scaler,
+      operationName = operationName,
+      uid = uid
+    )
+  }
+}
+
+final class LogMinShiftEstimatorModel[I <: Real, O <: Real](
+  scaler: LogMinShiftScaler,
+  operationName: String,
+  uid: String
+)(implicit tti: TypeTag[I],  tto: TypeTag[O], ttov: TypeTag[O#Value])
+extends UnaryModel[I, O](operationName = operationName, uid = uid) {
+  private val ftFactory = FeatureTypeFactory[O]()
+
+  def transformFn: I => O = v => {
+    val scaled = v.toDouble.map(x => math.log(x - scaler.args.min + 1))
+    ftFactory.newInstance(scaled)
+  }
+}
 
